@@ -614,6 +614,7 @@
         </div>
     </div>
 
+    <!-- WIDOK 1: MINES -->
     <div id="minesView" style="width: 100%;">
         <div class="game-instruction">
             <strong>Instrukcja - Mines Game:</strong>
@@ -666,6 +667,7 @@
         <div id="grid" class="grid-preview"></div>
     </div>
 
+    <!-- WIDOK 2: PLINKO -->
     <div id="plinkoView" style="display: none; contents: inherit;">
         <div class="plinko-sidebar">
             <div class="game-instruction">
@@ -716,6 +718,7 @@
         </div>
     </div>
 
+    <!-- WIDOK 3: CRASH -->
     <div id="crashView" style="display: none; contents: inherit;">
         <div class="crash-sidebar">
             <div class="game-instruction">
@@ -921,3 +924,550 @@
     function updateProgressDisplays() {
         labelT2.innerText = "Cel Główny";
         target2Label.innerText = `${balance} / 25000`;
+        let pct2 = Math.min((balance / 25000) * 100, 100);
+        target2Bar.style.width = `${pct2}%`;
+
+        // SPRAWDZENIE PRZEKROCZENIA CELU GŁÓWNEGO
+        if (balance >= 25000) {
+            statusMsg.innerText = "隣人は誕生日よりも死に近づいていた";
+            statusMsg.style.color = "var(--accent-gold)";
+            
+            const plinkoStatus = document.getElementById('plinkoStatus');
+            if(plinkoStatus) {
+                plinkoStatus.innerText = "隣人は誕生日よりも死に近づいていた";
+                plinkoStatus.style.color = "var(--accent-gold)";
+            }
+            
+            const crashStatus = document.getElementById('crashStatus');
+            if(crashStatus) {
+                crashStatus.innerText = "隣人は誕生日よりも死に近づいていた";
+                crashStatus.style.color = "var(--accent-gold)";
+            }
+        } else {
+            // Przywracanie domyślnych kolorów, gdy saldo spadnie poniżej 25k (np. po przegranej w Adminie)
+            statusMsg.style.color = "white";
+            const plinkoStatus = document.getElementById('plinkoStatus');
+            if(plinkoStatus && plinkoStatus.innerText === "隣人は誕生日よりも死に近づいていた") {
+                plinkoStatus.innerText = "Powodzenia w Plinko!";
+                plinkoStatus.style.color = "var(--accent-gold)";
+            }
+            const crashStatus = document.getElementById('crashStatus');
+            if(crashStatus && crashStatus.innerText === "隣人は誕生日よりも死に近づいていた") {
+                crashStatus.innerText = "Wprowadź stawkę i kliknij Join!";
+                crashStatus.style.color = "var(--accent-gold)";
+            }
+        }
+
+        if (hasReachedCrash) {
+            target1BoxModule.style.display = "none";
+        } else if (hasReachedPlinko) {
+            target1BoxModule.style.display = "flex";
+            labelT1.innerText = "Cel Mały";
+            target1Label.innerText = `${balance} / 5000`;
+            let pct1 = Math.min((balance / 5000) * 100, 100);
+            target1Bar.style.width = `${pct1}%`;
+        } else {
+            target1BoxModule.style.display = "flex";
+            labelT1.innerText = "Cel Mały";
+            target1Label.innerText = `${balance} / 1000`;
+            let pct1 = Math.min((balance / 1000) * 100, 100);
+            target1Bar.style.width = `${pct1}%`;
+        }
+    }
+
+    // LOGIKA MINES
+    function renderScale() {
+        sliderScale.innerHTML = '';
+        for(let i = 2; i <= 10; i++){
+            const span = document.createElement('span');
+            span.innerText = i;
+            if(i === gridSize) span.className = 'active';
+            sliderScale.appendChild(span);
+        }
+    }
+
+    function handleSliderChange(val) {
+        if (isGameActive) return;
+        gridSize = parseInt(val);
+        gridValueLabel.innerText = `${gridSize}x${gridSize}`;
+        renderScale();
+        let maxMines = (gridSize * gridSize) - 1;
+        if (totalMines > maxMines) {
+            totalMines = maxMines;
+            minesCountInput.value = totalMines;
+            updateQuickButtonsHighlight(totalMines);
+        }
+        minesCountInput.max = maxMines;
+        drawGrid();
+    }
+
+    function quickSelectMines(num, element) {
+        if (isGameActive) return;
+        let maxMines = (gridSize * gridSize) - 1;
+        if (num > maxMines) { alert(`Maksymalna liczba min to ${maxMines}!`); return; }
+        totalMines = num;
+        minesCountInput.value = num;
+        document.querySelectorAll('.quick-btn').forEach(btn => btn.classList.remove('active'));
+        if (element) element.classList.add('active');
+    }
+
+    function updateMinesFromInput(val) {
+        if (isGameActive) return;
+        let num = parseInt(val) || 1;
+        let maxMines = (gridSize * gridSize) - 1;
+        if (num > maxMines) { num = maxMines; minesCountInput.value = num; } 
+        else if (num < 1) { num = 1; minesCountInput.value = num; }
+        totalMines = num;
+        updateQuickButtonsHighlight(num);
+    }
+
+    function updateQuickButtonsHighlight(num) {
+        document.querySelectorAll('.quick-btn').forEach(btn => {
+            if (parseInt(btn.innerText) === num) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+    }
+
+    function drawGrid() {
+        gridContainer.innerHTML = '';
+        gridContainer.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
+        const totalCells = gridSize * gridSize;
+        for (let i = 0; i < totalCells; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.index = i;
+            gridContainer.appendChild(cell);
+        }
+    }
+
+    function calculateMultiplier() {
+        let totalCells = gridSize * gridSize;
+        let safeCells = totalCells - totalMines;
+        if (revealedCount === 0) return 1.0;
+        let p = 1.0;
+        for (let i = 0; i < revealedCount; i++) { p *= (safeCells - i) / (totalCells - i); }
+        return (1 / p * 0.96).toFixed(2);
+    }
+
+    function startGame() {
+        let bet = parseInt(betAmountInput.value);
+        if (isNaN(bet) || bet < 10) { alert("Minimalny zakład to 10 YP!"); return; }
+        if (bet > balance) { alert("Brak wystarczających środków!"); return; }
+
+        setBalance(balance - bet);
+        currentBet = bet;
+        revealedCount = 0;
+        currentMultiplier = 1.0;
+        pendingWinAmount = 0;
+        isGameActive = true;
+        isGamblePhase = false;
+        statusMsg.innerText = "Gra rozpoczęta! Szukaj diamentów.";
+        statusMsg.style.color = "white";
+        gridContainer.className = 'grid-active';
+        
+        minesCountInput.disabled = true;
+        betAmountInput.disabled = true;
+        gridRange.disabled = true;
+        startBtn.style.display = "none";
+        resetBtn.style.display = "none";
+        cashoutBtn.style.display = "none"; 
+
+        minePositions = [];
+        while (minePositions.length < totalMines) {
+            let rand = Math.floor(Math.random() * (gridSize * gridSize));
+            if (!minePositions.includes(rand)) minePositions.push(rand);
+        }
+
+        const cells = document.querySelectorAll('.cell');
+        cells.forEach((cell, index) => {
+            cell.innerText = "";
+            cell.className = "cell"; 
+            cell.onclick = () => clickCell(cell, index);
+        });
+    }
+
+    function clickCell(cell, index) {
+        if (!isGameActive || isGamblePhase || cell.classList.contains('safe')) return;
+        if (minePositions.includes(index)) {
+            cell.classList.add('mine');
+            cell.innerText = "💣";
+            statusMsg.innerText = "Trafiłeś na minę! Tracisz stawkę.";
+            statusMsg.style.color = "var(--red)";
+            gameOver(false);
+        } else {
+            cell.classList.add('safe');
+            cell.innerText = "💎";
+            revealedCount++;
+            currentMultiplier = calculateMultiplier();
+            pendingWinAmount = Math.floor(currentBet * currentMultiplier);
+            if (revealedCount > 0) {
+                cashoutBtn.style.display = "block";
+                cashoutBtn.innerText = `Odbierz: 💊 ${pendingWinAmount} (x${currentMultiplier})`;
+            }
+            if (revealedCount === (gridSize * gridSize) - totalMines) preCashoutMenu();
+        }
+    }
+
+    function preCashoutMenu() {
+        isGamblePhase = true; 
+        cashoutBtn.style.display = "none";
+        gambleContainer.style.display = "flex"; 
+        statusMsg.innerText = "Zabezpiecz wygraną lub zaryzykuj o podwojenie!";
+    }
+
+    function confirmNormalCashout() {
+        setBalance(balance + pendingWinAmount);
+        gambleContainer.style.display = "none";
+        if (balance >= 25000) {
+            statusMsg.innerText = "隣人は誕生日よりも死に近づいていた";
+            statusMsg.style.color = "var(--green)";
+        } else {
+            statusMsg.innerText = `Odebrano standardową wygraną: 💊 ${pendingWinAmount} YP`;
+            statusMsg.style.color = "var(--green)";
+        }
+        gameOver(true);
+    }
+
+    function executeGamble5050() {
+        gambleContainer.style.display = "none";
+        if (Math.random() < 0.5) {
+            let finalDouble = pendingWinAmount * 2;
+            setBalance(balance + finalDouble);
+            if (balance >= 25000) {
+                statusMsg.innerText = "隣人は誕生日よりも死に近づいていた";
+                statusMsg.style.color = "var(--green)";
+            } else {
+                statusMsg.innerText = `Sukces! Podwoiłeś wygraną do: 💊 ${finalDouble} YP! 🎲`;
+                statusMsg.style.color = "var(--green)";
+            }
+            gameOver(true);
+        } else {
+            statusMsg.innerText = "Pech! Ryzyko się nie opłaciło, tracisz wszystko! 💣";
+            statusMsg.style.color = "var(--red)";
+            gameOver(false);
+        }
+    }
+
+    function gameOver(isWin) {
+        isGameActive = false;
+        isGamblePhase = false;
+        gridContainer.className = 'grid-preview';
+        
+        document.querySelectorAll('.cell').forEach(cell => {
+            let idx = parseInt(cell.dataset.index);
+            cell.onclick = null; 
+            if (minePositions.includes(idx)) { 
+                cell.classList.add('mine'); 
+                cell.innerText = "💣"; 
+            } else if (!cell.classList.contains('safe')) {
+                cell.classList.add('safe');
+                cell.style.opacity = "0.4";
+                cell.innerText = "💎";
+            }
+        });
+
+        minesCountInput.disabled = false;
+        betAmountInput.disabled = false;
+        gridRange.disabled = false;
+        cashoutBtn.style.display = "none";
+        gambleContainer.style.display = "none";
+        startBtn.style.display = "block";
+        
+        updateActionButtons();
+    }
+
+    function resetGameBalance() { setBalance(50); startBtn.style.display = "block"; drawGrid(); }
+
+
+    // LOGIKA PLINKO
+    let plinkoRows = 10;
+    let plinkoDiff = 'easy';
+    let plinkoBalls = [];
+    const canvas = document.getElementById('plinkoCanvas');
+    const ctx = canvas.getContext('2d');
+    let plinkoAnimationId = null;
+
+    const plinkoMultipliers = {
+        easy: {
+            8: [5.6, 1.6, 1.1, 1.0, 0.5, 1.0, 1.1, 1.6, 5.6],
+            10: [5.7, 2.3, 1.2, 1.0, 1.0, 0.5, 1.0, 1.0, 1.2, 2.3, 5.7],
+            12: [6.0, 3.0, 1.6, 1.2, 1.1, 1.0, 0.5, 1.0, 1.1, 1.2, 1.6, 3.0, 6.0],
+            14: [7.0, 4.0, 2.0, 1.5, 1.2, 1.1, 1.0, 0.5, 1.0, 1.1, 1.2, 1.5, 2.0, 4.0, 7.0],
+            16: [9.0, 5.0, 2.5, 1.8, 1.4, 1.2, 1.1, 1.0, 0.5, 1.0, 1.1, 1.2, 1.4, 1.8, 2.5, 5.0, 9.0]
+        },
+        normal: {
+            8: [13, 3, 1.3, 0.7, 0.4, 0.7, 1.3, 3, 13],
+            10: [22, 5, 2, 1.4, 0.6, 0.4, 0.6, 1.4, 2, 5, 22],
+            12: [33, 11, 4, 2, 1.1, 0.6, 0.3, 0.6, 1.1, 2, 4, 11, 33],
+            14: [58, 15, 7, 4, 1.9, 1, 0.5, 0.2, 0.5, 1, 1.9, 4, 7, 15, 58],
+            16: [110, 41, 10, 5, 3, 1.5, 1, 0.5, 0.3, 0.5, 1, 1.5, 3, 5, 10, 41, 110]
+        },
+        hard: {
+            8: [29, 4, 1.5, 0.3, 0.2, 0.3, 1.5, 4, 29],
+            10: [76, 10, 4, 1.4, 0.2, 0.2, 0.2, 1.4, 4, 10, 76],
+            12: [170, 24, 8.1, 2, 0.7, 0.2, 0.2, 0.2, 0.7, 2, 8.1, 24, 170],
+            14: [250, 60, 12, 5.1, 1.8, 0.3, 0.2, 0.2, 0.2, 0.3, 1.8, 5.1, 12, 60, 250],
+            16: [1000, 130, 26, 9, 4, 2, 0.2, 0.2, 0.2, 0.2, 0.2, 2, 4, 9, 26, 130, 1000]
+        }
+    };
+
+    function changePlinkoDiff(diff, btn) { plinkoDiff = diff; document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); initPlinkoBoard(); }
+    function changePlinkoRows(rows, btn) { plinkoRows = rows; document.querySelectorAll('.row-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); initPlinkoBoard(); }
+    function getColorsForDiff() {
+        if(plinkoDiff === 'easy') return ['#ffb703', '#a78bfa', '#6366f1', '#3b82f6'];
+        if(plinkoDiff === 'normal') return ['#e63946', '#ffb703', '#2a9d8f', '#3b82f6'];
+        return ['#7a0010', '#e63946', '#ffb703', '#8a2be2'];
+    }
+
+    function updateMaxProfitDisplay() {
+        let bet = parseInt(document.getElementById('plinkoBet').value) || 0;
+        let maxMult = Math.max(...plinkoMultipliers[plinkoDiff][plinkoRows]);
+        document.getElementById('maxProfitVal').innerText = Math.floor(bet * maxMult).toLocaleString();
+    }
+
+    function initPlinkoBoard() {
+        const container = document.getElementById('multipliersContainer');
+        container.innerHTML = '';
+        const mults = plinkoMultipliers[plinkoDiff][plinkoRows];
+        const colors = getColorsForDiff();
+
+        mults.forEach((m, idx) => {
+            const div = document.createElement('div');
+            div.className = 'plinko-mult';
+            div.innerText = `${m}x`;
+            let colorIdx = Math.min(idx, mults.length - 1 - idx);
+            colorIdx = Math.min(colorIdx, colors.length - 1);
+            div.style.backgroundColor = colors[colorIdx];
+            container.appendChild(div);
+        });
+        drawPlinkoStatic();
+        updateMaxProfitDisplay();
+    }
+
+    function drawPlinkoStatic() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        const startY = 40;
+        const spacingY = (canvas.height - 80) / plinkoRows;
+
+        for (let r = 0; r <= plinkoRows; r++) {
+            let pinsInRow = r + 3;
+            let rowWidth = (pinsInRow - 1) * spacingY * 0.8;
+            let startX = (canvas.width - rowWidth) / 2;
+            for (let p = 0; p < pinsInRow; p++) {
+                ctx.beginPath();
+                ctx.arc(startX + p * spacingY * 0.8, startY + r * spacingY, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    function dropPlinkoBall() {
+        if (balance < 25) return;
+        let bet = parseInt(document.getElementById('plinkoBet').value);
+        if(isNaN(bet) || bet < 25) { alert('Minimalny zakład w Plinko to 25 YP!'); return; }
+        if(bet > balance) { alert('Brak wystarczających środków!'); return; }
+
+        setBalance(balance - bet);
+        const startY = 40;
+        const spacingY = (canvas.height - 80) / plinkoRows;
+        let currentX = canvas.width / 2;
+        let path = [];
+        let bias = 0;
+
+        for(let r = 0; r <= plinkoRows; r++) {
+            path.push({x: currentX + (Math.random() - 0.5) * (spacingY * 0.15), y: startY + r * spacingY});
+            let threshold = bias < 0 ? 0.54 : (bias > 0 ? 0.46 : 0.5);
+            let dir = Math.random() < threshold ? -1 : 1;
+            bias += dir;
+            currentX += (spacingY * 0.8 / 2) * dir;
+        }
+
+        let finalLeftCount = path.reduce((acc, step, index) => index === 0 ? acc : (step.x < path[index-1].x ? acc + 1 : acc), 0);
+        plinkoBalls.push({ path: path, step: 0, x: canvas.width / 2, y: 20, bet: bet, finalBucket: Math.max(0, Math.min(plinkoRows, plinkoRows - finalLeftCount)) });
+
+        if(!plinkoAnimationId) plinkoAnimationLoop();
+    }
+
+    function plinkoAnimationLoop() {
+        drawPlinkoStatic();
+        for(let i = plinkoBalls.length - 1; i >= 0; i--) {
+            let b = plinkoBalls[i];
+            let currentTarget = b.path[b.step];
+            b.x += (currentTarget.x - b.x) * 0.21;
+            b.y += (currentTarget.y - b.y) * 0.21;
+
+            ctx.beginPath();
+            ctx.fillStyle = '#ffb703';
+            ctx.shadowBlur = 8; ctx.shadowColor = '#ffb703';
+            ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); 
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            if(Math.abs(b.x - currentTarget.x) < 2 && Math.abs(b.y - currentTarget.y) < 2) {
+                b.step++;
+                if(b.step >= b.path.length) {
+                    let wonMult = plinkoMultipliers[plinkoDiff][plinkoRows][b.finalBucket];
+                    setBalance(balance + Math.floor(b.bet * wonMult));
+                    plinkoBalls.splice(i, 1);
+                }
+            }
+        }
+        if(plinkoBalls.length > 0) plinkoAnimationId = requestAnimationFrame(plinkoAnimationLoop);
+        else plinkoAnimationId = null;
+    }
+
+
+    /* SILNIK CRASH GAME */
+    let crashCanvas, crashCtx;
+    let crashState = "waiting"; 
+    let crashCurrentMultiplier = 1.00;
+    let crashTimeElapsed = 0;
+    let crashCrashPoint = 0;
+    let crashActiveBet = 0;
+    let crashLoopId = null;
+    let crashHistory = [3.31, 2.78, 3.11, 4.37];
+
+    function initCrashCanvas() {
+        crashCanvas = document.getElementById('crashCanvas');
+        crashCtx = crashCanvas.getContext('2d');
+        resizeCrashCanvas();
+        drawCrashStaticBackground();
+    }
+
+    function resizeCrashCanvas() {
+        if(crashCanvas) {
+            crashCanvas.width = crashCanvas.parentElement.clientWidth;
+            crashCanvas.height = crashCanvas.parentElement.clientHeight;
+        }
+    }
+
+    function drawCrashStaticBackground() {
+        crashCtx.clearRect(0, 0, crashCanvas.width, crashCanvas.height);
+        crashCtx.strokeStyle = "rgba(255,255,255,0.05)";
+        crashCtx.lineWidth = 2;
+        let steps = 6;
+        for(let i=1; i<steps; i++) {
+            let y = crashCanvas.height - (i * (crashCanvas.height / steps));
+            crashCtx.beginPath();
+            crashCtx.moveTo(40, y);
+            crashCtx.lineTo(crashCanvas.width - 20, y);
+            crashCtx.stroke();
+        }
+    }
+
+    function updateCrashHistoryUI() {
+        const box = document.getElementById('crashHistoryBox');
+        box.innerHTML = '';
+        crashHistory.slice(-5).reverse().forEach(val => {
+            const b = document.createElement('div');
+            b.className = 'history-badge';
+            b.innerText = val.toFixed(2) + "x";
+            box.appendChild(b);
+        });
+    }
+
+    function joinCrashGame() {
+        if (balance < 50) return;
+        if(crashState === "progressive") return;
+        let bet = parseInt(document.getElementById('crashBetInput').value);
+        if(isNaN(bet) || bet < 50) { alert("Minimalna stawka w grze Crash wynosi 50 YP!"); return; }
+        if(bet > balance) { alert("Brak wystarczających środków!"); return; }
+
+        setBalance(balance - bet);
+        crashActiveBet = bet;
+
+        document.getElementById('crashBtnAction').style.display = 'none';
+        document.getElementById('crashEscapeBtn').style.display = 'block';
+
+        let e = Math.random();
+        crashCrashPoint = Math.max(1.01, (99 / (100 - (e * 100))) * 0.98);
+
+        crashState = "progressive";
+        crashCurrentMultiplier = 1.00;
+        crashTimeElapsed = 0;
+        document.getElementById('crashSubtext').innerText = "Rakieta leci... Uciekaj przed wybuchem!";
+        
+        if (balance >= 25000) {
+            document.getElementById('crashStatus').innerText = "隣人は誕生日よりも死に近づいていた";
+            document.getElementById('crashStatus').style.color = "var(--accent-gold)";
+        } else {
+            document.getElementById('crashStatus').innerText = "Powodzenia!";
+            document.getElementById('crashStatus').style.color = "white";
+        }
+
+        if(crashLoopId) cancelAnimationFrame(crashLoopId);
+        crashGameLoop();
+    }
+
+    function escapeCrashGame() {
+        if(crashState !== "progressive") return;
+        let win = Math.floor(crashActiveBet * crashCurrentMultiplier);
+        setBalance(balance + win);
+
+        if (balance >= 25000) {
+            document.getElementById('crashStatus').innerText = "隣人は誕生日よりも死に近づいていた";
+            document.getElementById('crashStatus').style.color = "var(--green)";
+        } else {
+            document.getElementById('crashStatus').innerText = `Ucieczka udana! Zyskałeś: 💊 ${win} YP`;
+            document.getElementById('crashStatus').style.color = "var(--green)";
+        }
+        
+        crashActiveBet = 0;
+        document.getElementById('crashEscapeBtn').style.display = 'none';
+        document.getElementById('crashBtnAction').style.display = 'block';
+    }
+
+    function crashGameLoop() {
+        if(crashState !== "progressive") return;
+
+        crashTimeElapsed += 0.016; 
+        crashCurrentMultiplier = Math.exp(crashTimeElapsed * 0.15);
+
+        document.getElementById('crashMultiplierText').innerText = crashCurrentMultiplier.toFixed(2) + "x";
+
+        drawCrashStaticBackground();
+        crashCtx.strokeStyle = "var(--accent-blue)";
+        crashCtx.lineWidth = 4;
+        crashCtx.beginPath();
+        crashCtx.moveTo(40, crashCanvas.height - 40);
+
+        let currentX = 40 + (crashTimeElapsed * 25);
+        let currentY = (crashCanvas.height - 40) - (crashCurrentMultiplier * 20);
+        
+        crashCtx.quadraticCurveTo(crashCanvas.width / 3, crashCanvas.height - 40, currentX, currentY);
+        crashCtx.stroke();
+
+        if(crashCurrentMultiplier >= crashCrashPoint) {
+            crashState = "crashed";
+            document.getElementById('crashMultiplierText').innerText = "CRASHED! @ " + crashCrashPoint.toFixed(2) + "x";
+            document.getElementById('crashMultiplierText').style.color = "var(--red)";
+            document.getElementById('crashSubtext').innerText = "Rakieta eksplodowała!";
+            
+            if(crashActiveBet > 0) {
+                document.getElementById('crashStatus').innerText = `Eksplozja! Straciłeś stawkę 💊 ${crashActiveBet} YP`;
+                document.getElementById('crashStatus').style.color = "var(--red)";
+                crashActiveBet = 0;
+            }
+
+            crashHistory.push(crashCrashPoint);
+            updateCrashHistoryUI();
+
+            setTimeout(() => {
+                document.getElementById('crashMultiplierText').style.color = "white";
+                document.getElementById('crashMultiplierText').innerText = "1.00x";
+                document.getElementById('crashSubtext').innerText = "Waiting for next round...";
+                document.getElementById('crashEscapeBtn').style.display = 'none';
+                document.getElementById('crashBtnAction').style.display = 'block';
+                crashState = "waiting";
+                setBalance(balance); 
+            }, 3000);
+            return;
+        }
+
+        crashLoopId = requestAnimationFrame(crashGameLoop);
+    }
+</script>
+
+</body>
+</html>
